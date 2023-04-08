@@ -349,7 +349,6 @@ def evaluate(
     controller: AWAC,
     config: TrainConfig,
     mode: str,
-    epoch_global: int = None,
 ):
     modes = ["online", "offline"]
     if mode not in modes:
@@ -366,13 +365,12 @@ def evaluate(
     normalized_reward = env_eval.get_normalized_score(episode_rewards) * 100.0
 
     # log
-    log_step_total = (epoch_global + epoch) if mode == "online" else epoch
     wandb.log(
         {
             "eval/reward": episode_rewards.mean(),
             "eval/normalized_reward": normalized_reward.mean(),
         },
-        step=log_step_total,
+        step=epoch,
     )
     wandb.log({f"{mode}/test_normalized_reward": normalized_reward.mean()}, step=epoch)
 
@@ -474,7 +472,6 @@ def train_online(
                 controller=awac,
                 config=config,
                 mode="online",
-                epoch_global=e_global,
             )
 
 
