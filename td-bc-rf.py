@@ -43,7 +43,7 @@ class TrainConfig:
     eval_frequency: int = 1000
     n_test_episodes: int = 10
     normalize_reward: bool = False
-    num_envs: int = 2
+    num_envs: int = 8
 
     train_offline: bool = True
     train_online: bool = True
