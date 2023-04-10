@@ -23,7 +23,8 @@ from tqdm import trange
 import uuid
 
 from typing import Any, Dict, List, Optional, Tuple, Union
-os.environ["D4RL_SUPPRESS_IMPORT_ERROR"] = '1'
+
+os.environ["D4RL_SUPPRESS_IMPORT_ERROR"] = "1"
 
 
 @dataclass
@@ -405,15 +406,18 @@ def evaluate(
             "eval/reward": episode_rewards.mean(),
             "eval/normalized_reward": normalized_reward.mean(),
             f"{mode}/test_normalized_reward": normalized_reward.mean(),
-            f"{mode}/test_reward": episode_rewards.mean()
+            f"{mode}/test_reward": episode_rewards.mean(),
         },
         step=epoch,
     )
 
-    wandb.log({
-        'eval/reward_std': episode_rewards.std(),
-        "eval/normalized_reward_std": normalized_reward.std(),
-    }, step=epoch)
+    wandb.log(
+        {
+            "eval/reward_std": episode_rewards.std(),
+            "eval/normalized_reward_std": normalized_reward.std(),
+        },
+        step=epoch,
+    )
 
     # save
     torch.save(
@@ -475,7 +479,9 @@ def train_online(
         checkpoint_path = config.checkpoint_path_trained_offline
 
     awac = create_controller(state_dim, action_dim, config)
-    awac.load_state_dict(torch.load(checkpoint_path, map_location=torch.device(config.device)))
+    awac.load_state_dict(
+        torch.load(checkpoint_path, map_location=torch.device(config.device))
+    )
 
     if config.add_from_dataset > 0:
         assert dataset is not None, "Provide a dataset to add trajectories from"
@@ -501,7 +507,8 @@ def train_online(
         if (e + 1) % config.updates_before_collections == 0:
             episode_reward = collect_traj_from_env(envs, awac.actor, buffer)
             wandb.log(
-                {"online/train_episode_reward": episode_reward.mean()}, step=(e_global + e)
+                {"online/train_episode_reward": episode_reward.mean()},
+                step=(e_global + e),
             )
 
         batch = buffer.sample(config.batch_size)
@@ -554,7 +561,7 @@ def main(config: TrainConfig):
         project=config.project,
         group=config.group,
         name=config.name,
-        mode="disabled",  # DO NOT FORGET ME
+        # mode="disabled",  # DO NOT FORGET ME
     )
 
     env = gym.make(f"{config.env_name}")
@@ -564,8 +571,8 @@ def main(config: TrainConfig):
 
     dataset["observations"] = (dataset["observations"] - state_mean) / state_std
     dataset["next_observations"] = (
-                                           dataset["next_observations"] - state_mean
-                                   ) / state_std
+        dataset["next_observations"] - state_mean
+    ) / state_std
 
     env = wrap_env(gym.make(f"{config.env_name}"), state_mean, state_std)
 
