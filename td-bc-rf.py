@@ -46,13 +46,16 @@ class TrainConfig:
     num_envs: int = 8
 
     train_offline: bool = True
+    train_refinement: bool = True
     train_online: bool = True
 
     num_train_ops_offline: int = 1_000_000
-    num_train_ops_policy_refinement = 250_000
+    num_train_ops_policy_refinement: int = 250_000
     num_train_ops_online: int = 500_000
 
-    checkpoint_path_trained_offline: Optional[str] = None
+    checkpoint_path_trained_offline: Optional[
+        str
+    ] = "/Users/Ilya.Zisman/uni/maga/online-rl/checkpoints/pretrained_tdbc/tdbcrf_offline_training_1000000.pt"
     add_from_dataset: int = 0
     updates_before_collections = 1_000
 
@@ -574,8 +577,17 @@ def train_online(
 
 
 def train_offline(
-    env_eval: gym.Env, config: TrainConfig, dataset: Dict[str, np.ndarray]
+    env_eval: gym.Env,
+    config: TrainConfig,
+    dataset: Dict[str, np.ndarray],
+    mode="offline_training",
 ):
+    modes = ["offline_training", "offline_refinement", "online_training"]
+    if mode not in modes:
+        raise ValueError(
+            "Mode should be either 'offline_training', 'offline_refinement' or 'online_training'"
+        )
+
     state_dim = env_eval.observation_space.shape[0]
     action_dim = env_eval.action_space.shape[0]
 
@@ -584,38 +596,37 @@ def train_offline(
 
     # create controller and set training mode
     td_bc_rf = create_controller(state_dim, action_dim, config)
-    td_bc_rf.select_mode("offline_training")
+    td_bc_rf.select_mode(mode)
 
-    with open(os.path.join(config.checkpoints_path, "config.yaml"), "w") as f:
-        pyrallis.dump(config, f)
-
-    for e in trange(config.num_train_ops_offline):
-        batch = buffer.sample(config.batch_size)
-        update_info = td_bc_rf.update(batch)
-        wandb.log(update_info, step=e)
-
-        if (e + 1) % config.eval_frequency == 0:
-            evaluate(
-                epoch=(e + 1),
-                env_eval=env_eval,
-                controller=td_bc_rf,
-                config=config,
-                mode=td_bc_rf.mode,
+    if mode == "offline_refinement":
+        num_iter = config.num_train_ops_policy_refinement
+        global_e = config.num_train_ops_offline
+        if config.checkpoint_path_trained_offline is None:
+            checkpoint_path = os.path.join(
+                config.checkpoints_path,
+                "offline_refinement",
+                f"tdbcrf_offline_training_{global_e}.pt",
             )
+        else:
+            checkpoint_path = config.checkpoint_path_trained_offline
 
-    global_e = config.num_train_ops_offline
-    # change mode
-    print("\nStarting **refinement**...")
-    td_bc_rf.select_mode("offline_refinement")
+        td_bc_rf.load_state_dict(
+            torch.load(checkpoint_path, map_location=torch.device(config.device))
+        )
+        print("checkpoint loaded")
+    else:
+        num_iter = config.num_train_ops_offline
+        global_e = 0
 
-    for e in trange(config.num_train_ops_policy_refinement):
+    for e in trange(num_iter):
+        log_step = global_e + e
         batch = buffer.sample(config.batch_size)
         update_info = td_bc_rf.update(batch)
-        wandb.log(update_info, step=global_e + e)
+        wandb.log(update_info, step=log_step)
 
         if (e + 1) % config.eval_frequency == 0:
             evaluate(
-                epoch=(global_e + e + 1),
+                epoch=(log_step + 1),
                 env_eval=env_eval,
                 controller=td_bc_rf,
                 config=config,
@@ -647,21 +658,24 @@ def main(config: TrainConfig):
 
     print(f"Checkpoints path: {config.checkpoints_path}")
     os.makedirs(config.checkpoints_path, exist_ok=True)
+    os.makedirs(
+        os.path.join(config.checkpoints_path, "offline_training"), exist_ok=True
+    )
+    os.makedirs(
+        os.path.join(config.checkpoints_path, "offline_refinement"), exist_ok=True
+    )
+    os.makedirs(os.path.join(config.checkpoints_path, "online_training"), exist_ok=True)
+    with open(os.path.join(config.checkpoints_path, "config.yaml"), "w") as f:
+        pyrallis.dump(config, f)
 
     if config.train_offline:
-        os.makedirs(
-            os.path.join(config.checkpoints_path, "offline_training"), exist_ok=True
-        )
-        os.makedirs(
-            os.path.join(config.checkpoints_path, "offline_refinement"), exist_ok=True
-        )
         print("\nStarting **offline** training...")
-        train_offline(env, config, dataset)
+        train_offline(env, config, dataset, mode="offline_training")
+
+    if config.train_refinement:
+        train_offline(env, config, dataset, mode="offline_refinement")
 
     if config.train_online:
-        os.makedirs(
-            os.path.join(config.checkpoints_path, "online_training"), exist_ok=True
-        )
         print("\nStarting **online** training...")
         train_online(env, config, dataset, state_mean, state_std)
 
